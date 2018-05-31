@@ -4,6 +4,7 @@ This module allows you insert transactions and payees on Financier
 
 from pythonfinancier.easycouchdb import EasyCouchdb
 import uuid
+import configparser
 
 
 def split_id(full_id):
@@ -30,7 +31,10 @@ class Financier:
 
     selector = {}
 
-    def __init__(self, url_couch_db, username, password):
+    def __init__(self,
+                 url_couch_db=None,
+                 username=None,
+                 password=None):
         """
         Create a new instance of the Financier class
 
@@ -46,10 +50,25 @@ class Financier:
             If None, value is read from config file 'python-financier.ini'
             If string, password to login with
         """
+        config = configparser.ConfigParser()
+
+        if url_couch_db is None:
+            config.read('python-financier.ini')
+            url_couch_db = config['Financier']['url_couch_db']
+        if username is None:
+            config.read('python-financier.ini')
+            username = config['Financier']['username']
+        if password is None:
+            config.read('python-financier.ini')
+            password = config['Financier']['password']
+
         self.cdb = EasyCouchdb(url_couch_db)
         # print(self.cdb.login(username, password).json())
-        login_json = self.cdb.login(username, password).json()
-        roles = login_json['roles']
+        self.login_json = self.cdb.login(username, password).json()
+        if 'error' in self.login_json:
+            raise ConnectionError('Could not connect: ' + self.login_json[
+                'reason'])
+        roles = self.login_json['roles']
 
         self.user_db = next(r for r in roles if r.startswith('userdb'))
         self.account_map = {}
