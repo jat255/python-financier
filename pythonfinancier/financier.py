@@ -123,7 +123,8 @@ class Financier:
                                'fields': ['_id', 'name']}).json()['docs']
 
     def save_transaction(self, account_name, this_id,
-                         value, date, payee_name, memo):
+                         category_name, value, date,
+                         payee_name, memo):
         """
         Add a transaction to the database of the active budget. Category for
         transaction will be automatically determined from the autosuggest value
@@ -135,9 +136,11 @@ class Financier:
             Name of the account to use
         this_id : str
             A UUID4 formatted id to use for the transaction
+        category_name : str
+            Name of the category to use
         value : float or int
             The value of the transaction (positive for inflow, negative for
-            outflow)
+            outflow). This value is in cents (so $4 = a value of 400).
         date : str
             The date of the transaction (formatted YYYY-MM-DD)
         payee_name : str
@@ -167,6 +170,15 @@ class Financier:
             payee['_id'] = split_id(payee['_id'])
             self.payee_map[payee_name] = payee
 
+        # find category id:
+        category_id = None
+        if category_name is not None:
+            try:
+                category_id = self.find_category(category_name)[0]['_id']
+                category_id = split_id(category_id)
+            except Exception:
+                raise Exception("Category not found")
+
         id_transaction = self.get_id_transaction(this_id)
         tr = self.get_transaction(id_transaction)
 
@@ -175,10 +187,13 @@ class Financier:
                    'account': self.account_map[account_name],
                    'payee': self.payee_map[payee_name]['_id'], 'date': date,
                    'memo': memo}
-            if 'categorySuggest' in self.payee_map[payee_name]:
+            if category_id:
+                doc['category'] = category_id
+            elif 'categorySuggest' in self.payee_map[payee_name]:
                 doc['category'] = self.payee_map[payee_name]['categorySuggest']
                 print(
                     'Using category suggest from payee {0}'.format(payee_name))
+            print('Adding', doc)
             if '_rev' in tr:
                 doc['_rev'] = tr['_rev']
             print('importing transaction {0}'.format(doc['_id']))
@@ -274,6 +289,25 @@ class Financier:
                               {'selector': selector,
                                'fields': ['_id', 'name',
                                           'categorySuggest']}).json()['docs']
+
+    def find_category(self, name):
+        """
+        Find category(ies) by name within the database
+
+        Parameters
+        ----------
+        name : str
+            Name for which to search (must be an exact match)
+        Returns
+        -------
+            List of category json objects that match the given name
+        """
+        selector = {
+            '_id': {'$regex': '^{0}_category_'.format(self.budget_selector)},
+            'name': name}
+        return self.cdb.query(self.user_db,
+                              {'selector': selector,
+                               'fields': ['_id', 'name']}).json()['docs']
 
     def insert_payee(self, name):
         """

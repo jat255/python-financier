@@ -48,10 +48,12 @@ f.connect_budget('Personal')
 
 f.save_transaction('nubank',
                    uuid.uuid4(),
+                   'Rent/Mortgage',
                    400,
                    '2017-10-10',
                    'Carrefour',
-                   'teste memo') #acount, id, value, date, payee, memo
+                   'teste memo')
+                   #acount, id, category, value, date, payee, memo
 
 ```
 
