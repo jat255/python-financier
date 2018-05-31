@@ -206,8 +206,48 @@ class Financier:
             print(
                 'transaction {0} has already been imported '.format(tr['_id']))
 
-    def save_split(self, transactions):
-        pass
+    def save_split(self, account_name, this_id,
+                   value, date, payee_name,
+                   memo, transactions):
+        """
+        Add a split transaction to the database.
+
+        Parameters
+        ----------
+        account_name : str
+            Name of the account to use
+        this_id : str
+            A UUID4 formatted id to use for the transaction
+        value : float or int
+            The value of the transaction (positive for inflow, negative for
+            outflow). This value is in cents (so $4 = a value of 400).
+        date : str
+            The date of the transaction (formatted YYYY-MM-DD)
+        payee_name : str
+            Name of the payee to use (will be created if it does not
+            already exist)
+        memo : str
+            Memo to save in the transaction
+        transactions : list
+            a list of dictionaries, each with keys [value, category_name,
+            memo, payee_name], which will be included in the split transaction
+
+        Returns
+        -------
+            JSON response of the database upon inserting the transaction
+        """
+        if account_name not in self.account_map:
+            account = self.find_account(account_name)
+            if not account:
+                raise Exception("Account not found")
+            else:
+                account = split_id(account[0]['_id'])
+                self.account_map[account_name] = account
+
+        if payee_name not in self.payee_map:
+            payee = self.get_or_create_payee(payee_name)
+            payee['_id'] = split_id(payee['_id'])
+            self.payee_map[payee_name] = payee
 
     def get_transaction(self, id_transaction):
         """
