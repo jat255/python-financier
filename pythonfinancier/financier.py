@@ -32,6 +32,7 @@ class Financier:
     selector = {}
 
     def __init__(self,
+                 conf_file='python-financier.ini',
                  url_couch_db=None,
                  username=None,
                  password=None):
@@ -40,6 +41,8 @@ class Financier:
 
         Parameters
         ----------
+        conf_file : str
+            Location of configuration file from which to read settings
         url_couch_db : None or str
             If None, value is read from config file 'python-financier.ini'
             If string, Web url of the Financier database to which to connect
@@ -53,13 +56,13 @@ class Financier:
         config = configparser.ConfigParser()
 
         if url_couch_db is None:
-            config.read('python-financier.ini')
+            config.read(conf_file)
             url_couch_db = config['Financier']['url_couch_db']
         if username is None:
-            config.read('python-financier.ini')
+            config.read(conf_file)
             username = config['Financier']['username']
         if password is None:
-            config.read('python-financier.ini')
+            config.read(conf_file)
             password = config['Financier']['password']
 
         self.cdb = EasyCouchdb(url_couch_db)
