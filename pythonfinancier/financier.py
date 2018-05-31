@@ -138,6 +138,8 @@ class Financier:
             A UUID4 formatted id to use for the transaction
         category_name : str
             Name of the category to use
+            Can also be "income" (for this month) or "incomeNextMonth" (for
+            next month)
         value : float or int
             The value of the transaction (positive for inflow, negative for
             outflow). This value is in cents (so $4 = a value of 400).
@@ -172,7 +174,9 @@ class Financier:
 
         # find category id:
         category_id = None
-        if category_name is not None:
+        if category_name in ['income', 'incomeNextMonth']:
+            category_id = category_name
+        elif category_name is not None:
             try:
                 category_id = self.find_category(category_name)[0]['_id']
                 category_id = split_id(category_id)
@@ -201,6 +205,9 @@ class Financier:
         else:
             print(
                 'transaction {0} has already been imported '.format(tr['_id']))
+
+    def save_split(self, transactions):
+        pass
 
     def get_transaction(self, id_transaction):
         """
