@@ -7,6 +7,7 @@ import requests
 from urllib.parse import urljoin
 from time import sleep
 from requests.adapters import HTTPAdapter
+import logging
 
 
 class EasyCouchdb:
@@ -30,10 +31,11 @@ class EasyCouchdb:
         ----------
         url : str
         """
+        self.logger = logging.getLogger(__name__)
         self.url = url
         self.SESSION_URL = urljoin(self.url, self.SESSION)
         self.ALL_DBS_URL = urljoin(self.url, self.ALL_DBS)
-        print(self.SESSION_URL)
+        self.logger.debug('SESSION_URL: {}'.format(self.SESSION_URL))
 
     def login(self, username, password):
         """
@@ -89,11 +91,11 @@ class EasyCouchdb:
             List of the documents that match the given query
         """
         sleep(0.5)
-        print('executing query: {0}'.format(selector))
+        self.logger.debug('executing query: {0}'.format(selector))
         ret = self.req_session.post(
             urljoin(self.url, '/'.join([db_name, self.FIND])), json=selector,
             timeout=self.TIMEOUT)
-        print('query executed')
+        self.logger.debug('query executed')
         return ret
 
     def insert(self, db_name, doc):
@@ -112,7 +114,7 @@ class EasyCouchdb:
             Response of the POST request for the insertion
         """
         sleep(0.5)
-        print('inserting', urljoin(self.url, db_name))
+        self.logger.debug('inserting', urljoin(self.url, db_name))
         return self.req_session.post(urljoin(self.url, db_name), json=doc,
                                      timeout=self.TIMEOUT)
 
@@ -132,7 +134,8 @@ class EasyCouchdb:
             Response of the PUT request for the document update
         """
         sleep(0.5)
-        print('putting', urljoin(self.url, '/'.join([db_name, doc['_id']])))
+        self.logger.debug('putting', urljoin(self.url,
+                                         '/'.join([db_name, doc['_id']])))
         return self.req_session.put(
             urljoin(self.url, '/'.join([db_name, doc['_id']])), json=doc)
 
@@ -152,7 +155,8 @@ class EasyCouchdb:
             Response of the GET request for the document retrieval
         """
         sleep(0.5)
-        print('getting', urljoin(self.url, '/'.join([db_name, _id])))
+        self.logger.debug('getting',
+                          urljoin(self.url, '/'.join([db_name, _id])))
         return self.req_session.get(
             urljoin(self.url, '/'.join([db_name, _id])),
             timeout=self.TIMEOUT)

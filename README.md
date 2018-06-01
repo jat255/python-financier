@@ -31,7 +31,6 @@ USAGE
 
 ```python
 from pythonfinancier import Financier
-import uuid
 
 # If using the default config file location:
 f = Financier()
@@ -47,7 +46,6 @@ f = Financier(url_couch_db='https://app.financier.io/db/',
 f.connect_budget('Personal')
 
 f.save_transaction('nubank',
-                   uuid.uuid4(),
                    'Rent/Mortgage',
                    400,
                    '2017-10-10',

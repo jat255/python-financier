@@ -5,6 +5,7 @@ This module allows you insert transactions and payees on Financier
 from pythonfinancier.easycouchdb import EasyCouchdb
 import uuid
 import configparser
+import logging
 
 
 def split_id(full_id):
@@ -65,9 +66,11 @@ class Financier:
             config.read(conf_file)
             password = config['Financier']['password']
 
+        self.logger = logging.getLogger(__name__)
+
         self.cdb = EasyCouchdb(url_couch_db)
-        # print(self.cdb.login(username, password).json())
         self.login_json = self.cdb.login(username, password).json()
+        self.logger.debug('login_json: {}'.format(self.login_json))
         if 'error' in self.login_json:
             raise ConnectionError('Could not connect: ' + self.login_json[
                 'reason'])
@@ -75,9 +78,10 @@ class Financier:
 
         self.user_db = next(r for r in roles if r.startswith('userdb'))
         self.account_map = {}
+        self.category_map = {}
         self.payee_map = {}
         self.budget_selector = ''
-        print('Connecting on db {0}'.format(self.user_db))
+        self.logger.debug('Connecting on db {0}'.format(self.user_db))
 
     def get_all_budgets(self):
         """
@@ -104,7 +108,8 @@ class Financier:
         budget = self.find_budget(name)
         if budget:
             self.budget_selector = budget[0]['_id'].replace('budget', 'b')
-            print('connecting on budget {0}'.format(self.budget_selector))
+            self.logger.debug('connecting on '
+                          'budget {0}'.format(self.budget_selector))
         else:
             raise Exception('Budget not found')
 
@@ -122,20 +127,16 @@ class Financier:
                               {'selector': selector,
                                'fields': ['_id', 'name']}).json()['docs']
 
-    def save_transaction(self, account_name, this_id,
+    def save_transaction(self, account_name,
                          category_name, value, date,
                          payee_name, memo):
         """
-        Add a transaction to the database of the active budget. Category for
-        transaction will be automatically determined from the autosuggest value
-        for the particular payee.
+        Add a transaction to the database of the active budget.
 
         Parameters
         ----------
         account_name : str
             Name of the account to use
-        this_id : str
-            A UUID4 formatted id to use for the transaction
         category_name : str
             Name of the category to use
             Can also be "income" (for this month) or "incomeNextMonth" (for
@@ -155,58 +156,38 @@ class Financier:
         -------
             JSON response of the database upon inserting the transaction
         """
-        # getting account
-        # first check if already in cache map
-        if account_name not in self.account_map:
-            account = self.find_account(account_name)
-            if not account:
-                raise Exception("Account not found")
-            else:
-                account = split_id(account[0]['_id'])
-                self.account_map[account_name] = account
+        this_id = uuid.uuid4()
+
+        # getting account from either map or database
+        account_id = self.find_account(account_name)['_id']
 
         # getting payee or creating a new one
-        # first check the cache map
-        if payee_name not in self.payee_map:
-            payee = self.get_or_create_payee(payee_name)
-            payee['_id'] = split_id(payee['_id'])
-            self.payee_map[payee_name] = payee
+        _ = self.get_or_create_payee(payee_name)
+        payee_id = self.payee_map[payee_name]['_id']
 
-        # find category id:
-        category_id = None
-        if category_name in ['income', 'incomeNextMonth']:
-            category_id = category_name
-        elif category_name is not None:
-            try:
-                category_id = self.find_category(category_name)[0]['_id']
-                category_id = split_id(category_id)
-            except Exception:
-                raise Exception("Category not found")
+        # find category id from map or database:
+        category_id = self.find_category(category_name)['_id']
 
-        id_transaction = self.get_id_transaction(this_id)
+        id_transaction = self.get_id_transaction(str(this_id))
         tr = self.get_transaction(id_transaction)
 
         if not tr or '_id' not in tr:
             doc = {'_id': id_transaction, 'value': value,
-                   'account': self.account_map[account_name],
-                   'payee': self.payee_map[payee_name]['_id'], 'date': date,
-                   'memo': memo}
-            if category_id:
-                doc['category'] = category_id
-            elif 'categorySuggest' in self.payee_map[payee_name]:
-                doc['category'] = self.payee_map[payee_name]['categorySuggest']
-                print(
-                    'Using category suggest from payee {0}'.format(payee_name))
-            print('Adding', doc)
+                   'account': account_id,
+                   'payee': payee_id, 'date': date,
+                   'category': category_id, 'memo': memo}
+            self.logger.debug('Adding', doc)
+
             if '_rev' in tr:
                 doc['_rev'] = tr['_rev']
-            print('importing transaction {0}'.format(doc['_id']))
+            self.logger.debug('importing transaction {0}'.format(doc['_id']))
+
             return self.cdb.save(self.user_db, doc)
         else:
-            print(
+            self.logger.warning(
                 'transaction {0} has already been imported '.format(tr['_id']))
 
-    def save_split(self, account_name, this_id,
+    def save_split(self, account_name,
                    value, date, payee_name,
                    memo, transactions):
         """
@@ -216,8 +197,6 @@ class Financier:
         ----------
         account_name : str
             Name of the account to use
-        this_id : str
-            A UUID4 formatted id to use for the transaction
         value : float or int
             The value of the transaction (positive for inflow, negative for
             outflow). This value is in cents (so $4 = a value of 400).
@@ -236,6 +215,8 @@ class Financier:
         -------
             JSON response of the database upon inserting the transaction
         """
+        this_id = uuid.uuid4()
+
         if account_name not in self.account_map:
             account = self.find_account(account_name)
             if not account:
@@ -300,7 +281,8 @@ class Financier:
 
     def find_account(self, name):
         """
-        Find account(s) by name within the database
+        Find account(s) by name within the database, checking the local
+        account map first. Raises a ValueError if the account is not found.
 
         Parameters
         ----------
@@ -308,14 +290,36 @@ class Financier:
             Name for which to search (must be an exact match)
         Returns
         -------
-            List of account json objects that match the given name
+        res : dict
+            The doc dictionary of the account
         """
-        selector = {
-            '_id': {'$regex': '^{0}_account_'.format(self.budget_selector)},
-            'name': name}
-        return self.cdb.query(self.user_db,
-                              {'selector': selector,
-                               'fields': ['_id', 'name']}).json()['docs']
+        if name in self.account_map:
+            self.logger.info('got account ({}) '
+                             'from self.account_map'.format(name))
+            res = self.account_map[name]
+
+        else:
+            selector = {
+                '_id': {'$regex':
+                        '^{0}_account_'.format(self.budget_selector)},
+                'name': name}
+
+            try:
+                # result of query is a list of dicts:
+                res = self.cdb.query(self.user_db,
+                                     {'selector': selector,
+                                      'fields': ['_id',
+                                                 'name']}).json()['docs']
+                # so we need to take first value:
+                res = res[0]
+                res['_id'] = split_id(res['_id'])
+                self.logger.info('got account ({}) '
+                                 'from remote db'.format(name))
+                self.account_map[name] = res
+            except Exception:
+                raise ValueError("Account not found")
+
+        return res
 
     def find_payee(self, name):
         """
@@ -339,7 +343,8 @@ class Financier:
 
     def find_category(self, name):
         """
-        Find category(ies) by name within the database
+        Find category(ies) by name within the database, checking the local
+        category map first. Raises a ValueError if the category is not found.
 
         Parameters
         ----------
@@ -347,14 +352,41 @@ class Financier:
             Name for which to search (must be an exact match)
         Returns
         -------
-            List of category json objects that match the given name
+        res : dict
+            Doc dictionary of the category with bare ``_id`` (without budget
+            id) and ``name``
         """
-        selector = {
-            '_id': {'$regex': '^{0}_category_'.format(self.budget_selector)},
-            'name': name}
-        return self.cdb.query(self.user_db,
-                              {'selector': selector,
-                               'fields': ['_id', 'name']}).json()['docs']
+        if name in ['income', 'incomeNextMonth']:
+            self.logger.debug('*** got category ({})'.format(name))
+            res = {'_id': name,
+                   'name': name}
+
+        elif name in self.category_map:
+            self.logger.debug('*** got category ({}) '
+                              'from self.category_map'.format(name))
+            res = self.category_map[name]
+
+        else:
+            selector = {
+                '_id': {'$regex':
+                        '^{0}_category_'.format(self.budget_selector)},
+                'name': name}
+            try:
+                # result of query is a list of dicts:
+                res = self.cdb.query(self.user_db,
+                                     {'selector': selector,
+                                      'fields': ['_id',
+                                                 'name']}).json()['docs']
+                # so we need to take first value:
+                res = res[0]
+                res['_id'] = split_id(res['_id'])
+                self.logger.debug('*** got category ({}) '
+                                  'from remote db'.format(name))
+                self.category_map[name] = res
+            except Exception:
+                raise ValueError("Category not found")
+
+        return res
 
     def insert_payee(self, name):
         """
@@ -375,7 +407,8 @@ class Financier:
 
     def get_or_create_payee(self, name):
         """
-        Return id of a payee, and create one if it does not exist
+        Return id of a payee, and create one if it does not exist, adding it
+        to the payee_map cache for later use
 
         Parameters
         ----------
@@ -384,13 +417,27 @@ class Financier:
 
         Returns
         -------
-        ret : str
-            The ``id`` value of the existing (or created) payee
+        ret : dict
+            The doc dictionary of the existing (or created) payee
         """
-        payee = self.find_payee(name)
-        if payee:
-            return payee[0]
+        # first check the cache map
+        if name in self.payee_map:
+            self.logger.info('Got payee ({}) from payee_map'.format(name))
+            return self.payee_map[name]
+
         else:
-            ret = self.insert_payee(name)
-            ret['_id'] = ret['id']
-            return ret
+            payee = self.find_payee(name)
+            if payee:
+                payee = payee[0]
+                payee['_id'] = split_id(payee['_id'])
+                self.logger.info('found payee ({}) in remote database'.format(
+                    name))
+                self.payee_map[name] = payee  # add to payee_map
+                return payee
+            else:
+                payee = self.insert_payee(name)
+                payee['_id'] = split_id(payee['id'])
+                self.logger.info('added payee ({}) to remote database'.format(
+                    name))
+                self.payee_map[name] = payee  # add to payee_map
+                return payee
