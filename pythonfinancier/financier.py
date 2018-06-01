@@ -251,6 +251,71 @@ class Financier:
             self.logger.warning(
                 'transaction {0} has already been imported '.format(tr['_id']))
 
+    def save_transfer(self,
+                      from_account_name,
+                      to_account_name,
+                      value, date,
+                      memo):
+        """
+        Add a split transaction to the database.
+
+        Parameters
+        ----------
+        from_account_name : str
+            Name of the account from which the transfer occurs
+        to_account_name : str
+            Name of the account to which the transfer occurs
+        value : float or int
+            The value of the transaction in cents (so $4 = a value of 400).
+            A positive value represents an outflow from ``from_account_name``
+            and inflow into ``to_account_name`` and vice versa for negative.
+        date : str
+            The date of the transaction (formatted YYYY-MM-DD)
+        memo : str
+            Memo to save in the transactions
+
+        Returns
+        -------
+            JSON response of the database upon inserting the transaction
+        """
+        this_id = uuid.uuid4()
+
+        # getting account from either map or database
+        from_account_id = self.find_account(from_account_name)['_id']
+        to_account_id = self.find_account(to_account_name)['_id']
+
+        # getting payee or creating a new one
+        payee_id = self.get_or_create_payee(payee_name)['_id']
+
+        id_transaction = self.get_id_transaction(str(this_id))
+        tr = self.get_transaction(id_transaction)
+
+        self.logger.info(transactions)
+        for i, t in enumerate(transactions):
+            t['category'] = self.find_category(t.pop('category_name'))['_id']
+            t['payee'] = self.get_or_create_payee(t.pop('payee_name'))['_id']
+            transactions[i] = t
+
+        self.logger.info(transactions)
+
+        if not tr or '_id' not in tr:
+            # category is "split"
+            doc = {'_id': id_transaction, 'value': value,
+                   'account': account_id,
+                   'payee': payee_id, 'date': date,
+                   'category': 'split', 'memo': memo,
+                   'splits': transactions}
+            self.logger.debug('Adding', doc)
+
+            if '_rev' in tr:
+                doc['_rev'] = tr['_rev']
+            self.logger.debug('importing transaction {0}'.format(doc['_id']))
+
+            return self.cdb.save(self.user_db, doc)
+        else:
+            self.logger.warning(
+                'transaction {0} has already been imported '.format(tr['_id']))
+
     def get_transaction(self, id_transaction):
         """
         Get the JSON object representing a transaction
@@ -341,6 +406,39 @@ class Financier:
                 raise ValueError("Account not found")
 
         return res
+
+    def find_transaction(self,
+                         memo=None,
+                         value=None,
+                         date=None):
+        """
+        Find transaction(s) by memo or value within the database
+
+        Parameters
+        ----------
+        memo : str
+            Memo for which to search (must be an exact match)
+        value : float or int
+            Value for which to search in cents (must be exact match)
+        date : str
+            Date for which to search (YYYY-MM-DD)
+
+        Returns
+        -------
+            List of transaction json objects that match the given name
+        """
+        selector = {
+            '_id': {'$regex': '^{0}_transaction_'.format(
+                self.budget_selector)}}
+        if memo:
+            selector['memo'] = memo
+        if value:
+            selector['value'] = value
+        if date:
+            selector['date'] = date
+
+        return self.cdb.query(self.user_db,
+                              {'selector': selector}).json()['docs']
 
     def find_payee(self, name):
         """
