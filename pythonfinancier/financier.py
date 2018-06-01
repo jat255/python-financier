@@ -162,8 +162,7 @@ class Financier:
         account_id = self.find_account(account_name)['_id']
 
         # getting payee or creating a new one
-        _ = self.get_or_create_payee(payee_name)
-        payee_id = self.payee_map[payee_name]['_id']
+        payee_id = self.get_or_create_payee(payee_name)['_id']
 
         # find category id from map or database:
         category_id = self.find_category(category_name)['_id']
@@ -217,18 +216,40 @@ class Financier:
         """
         this_id = uuid.uuid4()
 
-        if account_name not in self.account_map:
-            account = self.find_account(account_name)
-            if not account:
-                raise Exception("Account not found")
-            else:
-                account = split_id(account[0]['_id'])
-                self.account_map[account_name] = account
+        # getting account from either map or database
+        account_id = self.find_account(account_name)['_id']
 
-        if payee_name not in self.payee_map:
-            payee = self.get_or_create_payee(payee_name)
-            payee['_id'] = split_id(payee['_id'])
-            self.payee_map[payee_name] = payee
+        # getting payee or creating a new one
+        payee_id = self.get_or_create_payee(payee_name)['_id']
+
+        id_transaction = self.get_id_transaction(str(this_id))
+        tr = self.get_transaction(id_transaction)
+
+        self.logger.info(transactions)
+        for i, t in enumerate(transactions):
+            t['category'] = self.find_category(t.pop('category_name'))['_id']
+            t['payee'] = self.get_or_create_payee(t.pop('payee_name'))['_id']
+            transactions[i] = t
+
+        self.logger.info(transactions)
+
+        if not tr or '_id' not in tr:
+            # category is "split"
+            doc = {'_id': id_transaction, 'value': value,
+                   'account': account_id,
+                   'payee': payee_id, 'date': date,
+                   'category': 'split', 'memo': memo,
+                   'splits': transactions}
+            self.logger.debug('Adding', doc)
+
+            if '_rev' in tr:
+                doc['_rev'] = tr['_rev']
+            self.logger.debug('importing transaction {0}'.format(doc['_id']))
+
+            return self.cdb.save(self.user_db, doc)
+        else:
+            self.logger.warning(
+                'transaction {0} has already been imported '.format(tr['_id']))
 
     def get_transaction(self, id_transaction):
         """
