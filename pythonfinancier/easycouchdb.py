@@ -114,7 +114,8 @@ class EasyCouchdb:
             Response of the POST request for the insertion
         """
         sleep(0.5)
-        self.logger.debug('inserting', urljoin(self.url, db_name))
+        self.logger.debug('inserting ' +
+                          str(urljoin(self.url, db_name)))
         return self.req_session.post(urljoin(self.url, db_name), json=doc,
                                      timeout=self.TIMEOUT)
 
@@ -134,8 +135,9 @@ class EasyCouchdb:
             Response of the PUT request for the document update
         """
         sleep(0.5)
-        self.logger.debug('putting', urljoin(self.url,
-                                         '/'.join([db_name, doc['_id']])))
+        self.logger.debug('putting ' +
+                          str(urljoin(self.url, '/'.join([db_name,
+                                                          doc['_id']]))))
         return self.req_session.put(
             urljoin(self.url, '/'.join([db_name, doc['_id']])), json=doc)
 
@@ -155,8 +157,8 @@ class EasyCouchdb:
             Response of the GET request for the document retrieval
         """
         sleep(0.5)
-        self.logger.debug('getting',
-                          urljoin(self.url, '/'.join([db_name, _id])))
+        self.logger.debug('getting ' +
+                          str(urljoin(self.url, '/'.join([db_name, _id]))))
         return self.req_session.get(
             urljoin(self.url, '/'.join([db_name, _id])),
             timeout=self.TIMEOUT)
