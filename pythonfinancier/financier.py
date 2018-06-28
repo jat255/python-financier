@@ -254,8 +254,10 @@ class Financier:
     def save_transfer(self,
                       from_account_name,
                       to_account_name,
-                      value, date,
-                      memo):
+                      value,
+                      date,
+                      memo=None,
+                      from_category_name=None):
         """
         Add a split transaction to the database.
 
@@ -271,50 +273,81 @@ class Financier:
             and inflow into ``to_account_name`` and vice versa for negative.
         date : str
             The date of the transaction (formatted YYYY-MM-DD)
-        memo : str
-            Memo to save in the transactions
+        memo : str or None
+            Memo to save in the transactions (optional)
+        from_category_name : str or None
+            If the transfer is to an off-budget account, the category should
+            be provided (optional)
 
         Returns
         -------
             JSON response of the database upon inserting the transaction
         """
-        this_id = uuid.uuid4()
+        from_id = uuid.uuid4()
+        to_id = uuid.uuid4()
 
         # getting account from either map or database
         from_account_id = self.find_account(from_account_name)['_id']
         to_account_id = self.find_account(to_account_name)['_id']
 
-        # getting payee or creating a new one
-        payee_id = self.get_or_create_payee(payee_name)['_id']
+        # Get category (if needed)
+        if from_category_name:
+            from_category_id = self.find_category(from_category_name)['_id']
+        else:
+            from_category_id = None
 
-        id_transaction = self.get_id_transaction(str(this_id))
-        tr = self.get_transaction(id_transaction)
+        # Need to create two transactions for each side of the transfer
+        # 'payee' is null; 'account' is the bare uuid of this account
+        # 'transfer' is the bare uuid of the corresponding transaction in
+        # the other account; 'category' is null (if the transfer is on-budget
 
-        self.logger.info(transactions)
-        for i, t in enumerate(transactions):
-            t['category'] = self.find_category(t.pop('category_name'))['_id']
-            t['payee'] = self.get_or_create_payee(t.pop('payee_name'))['_id']
-            transactions[i] = t
+        from_id_transaction = self.get_id_transaction(str(from_id))
+        to_id_transaction = self.get_id_transaction(str(to_id))
+        from_tr = self.get_transaction(from_id_transaction)
+        to_tr = self.get_transaction(to_id_transaction)
 
-        self.logger.info(transactions)
+        # setup from transaction:
+        if not from_tr or '_id' not in from_tr:
+            from_doc = {'_id': from_id_transaction,
+                        'value': -1 * value,
+                        'account': from_account_id,
+                        'date': date,
+                        'memo': memo,
+                        'category': from_category_id,
+                        'transfer': str(to_id)
+                        }
+            if '_rev' in from_tr:
+                from_doc['_rev'] = from_tr['_rev']
 
-        if not tr or '_id' not in tr:
-            # category is "split"
-            doc = {'_id': id_transaction, 'value': value,
-                   'account': account_id,
-                   'payee': payee_id, 'date': date,
-                   'category': 'split', 'memo': memo,
-                   'splits': transactions}
-            self.logger.debug('Adding', doc)
-
-            if '_rev' in tr:
-                doc['_rev'] = tr['_rev']
-            self.logger.debug('importing transaction {0}'.format(doc['_id']))
-
-            return self.cdb.save(self.user_db, doc)
+            self.logger.debug('Adding from_doc', from_doc)
+            from_save_output = self.cdb.save(self.user_db, from_doc)
         else:
             self.logger.warning(
-                'transaction {0} has already been imported '.format(tr['_id']))
+                'from_transaction {0} has already been '
+                'imported '.format(from_tr['_id']))
+            from_save_output = None
+
+        # setup to transaction:
+        if not to_tr or '_id' not in to_tr:
+            to_doc = {'_id': to_id_transaction,
+                      'value': value,
+                      'account': to_account_id,
+                      'date': date,
+                      'memo': memo,
+                      'transfer': str(from_id)
+                      }
+            if '_rev' in to_tr:
+                to_doc['_rev'] = to_tr['_rev']
+
+            self.logger.debug('Adding to_doc', to_doc)
+            to_save_output = self.cdb.save(self.user_db, to_doc)
+        else:
+            self.logger.warning(
+                'to_transaction {0} has already been '
+                'imported '.format(to_tr['_id']))
+            to_save_output = None
+
+        return from_save_output, to_save_output
 
     def get_transaction(self, id_transaction):
         """

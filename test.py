@@ -5,16 +5,20 @@ from datetime import datetime
 from pprint import pprint
 
 # logging.getLogger().setLevel(logging.INFO)
-logger1 = logging.getLogger('pythonfinancier.financier')
-logger2 = logging.getLogger('pythonfinancier.easycouchdb')
-logger1.setLevel(logging.INFO)
-logger2.setLevel(logging.INFO)
+financier_logger = logging.getLogger('pythonfinancier.financier')
+couchdb_logger = logging.getLogger('pythonfinancier.easycouchdb')
+financier_logger.setLevel(logging.DEBUG)
+couchdb_logger.setLevel(logging.DEBUG)
 logging.info('Get logging setup')
 
 f = Financier(conf_file='my_financier.ini')
-f.connect_budget('Our Finances')
-pprint(f.find_transaction(value=200000, date='2018-05-26'))
-pprint(f.find_transaction(value=-200000, date='2018-05-26'))
+f.connect_budget('test_budget')
+
+
+# f.connect_budget('Our Finances')
+# pprint(f.find_transaction(value=200000, date='2018-05-26'))
+# pprint(f.find_transaction(value=-200000, date='2018-05-26'))
+
 today = datetime.now().strftime('%Y-%m-%d')
 
 
@@ -77,6 +81,22 @@ def test_splits():
 
 
 def test_transfer():
-    pass
+    from_acct = 'account1'
+    to_acct = 'account2'
 
-# test_splits()
+    # f.save_transfer(from_acct,
+    #                 to_acct,
+    #                 900,
+    #                 today,
+    #                 'test memo',
+    #                 from_category_name='Rent/Mortgage')
+
+    f.save_transfer(from_acct,
+                    'Test from python',
+                    10000,
+                    today,
+                    'test memo',
+                    from_category_name='Rent/Mortgage')
+
+
+test_transfer()
